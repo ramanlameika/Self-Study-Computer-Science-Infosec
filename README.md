@@ -7,3 +7,19 @@ Infosec;
 Healthcare Infosec;
 Phylosophy;
 Math.
+
+NB Notabene
+
+​!!!!
+
+Create workspace,
+
+Do projects (infosec, python, linux etc(update later with new things)
+
+read computer science books
+
+Github all things
+
+Focus. 
+
+Workout 
