@@ -1,6 +1,6 @@
  # here you find resources for infosec and computer science self knowledge degree:
 Python;
-Linu;
+Linux;
 Javascript;
 C;
 Infosec;
