@@ -41,12 +41,16 @@ def _ticket_validity_window(ticket_type: TicketType) -> timedelta:
 @router.post("", response_model=TicketWithQR, status_code=status.HTTP_201_CREATED)
 async def issue_ticket(payload: TicketIssueRequest, db: AsyncSession = Depends(get_db)) -> dict:
     """Issue a new ticket and return it with a QR code."""
+    from uuid import uuid4
     now = datetime.now(timezone.utc)
     valid_until = now + _ticket_validity_window(payload.ticket_type)
 
-    sig = sign_ticket(payload.user_id, payload.user_id, payload.agency_id, valid_until)
+    # Generate the ticket ID upfront so the signature binds to it
+    ticket_id = uuid4()
+    sig = sign_ticket(ticket_id, payload.user_id, payload.agency_id, valid_until)
 
     ticket = Ticket(
+        id=ticket_id,
         user_id=payload.user_id,
         agency_id=payload.agency_id,
         ticket_type=payload.ticket_type,

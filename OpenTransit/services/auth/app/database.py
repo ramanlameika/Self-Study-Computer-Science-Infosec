@@ -18,12 +18,6 @@ def get_engine():
     return _engine
 
 
-# Expose engine for use in main.py startup
-@property
-def engine():
-    return get_engine()
-
-
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """Dependency that provides an async database session."""
     get_engine()
