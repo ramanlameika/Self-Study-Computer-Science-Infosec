@@ -1,0 +1,152 @@
+version: "3.9"
+
+services:
+  # ── Infrastructure ──────────────────────────────────────────────────────────
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: opentransit
+      POSTGRES_PASSWORD: opentransit_dev
+      POSTGRES_DB: opentransit
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U opentransit"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: opentransit
+      RABBITMQ_DEFAULT_PASS: opentransit_dev
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Services ─────────────────────────────────────────────────────────────────
+
+  auth:
+    build: ./services/auth
+    ports:
+      - "8001:8001"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://opentransit:opentransit_dev@postgres/opentransit_auth
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+      ACCESS_TOKEN_EXPIRE_MINUTES: 30
+      REFRESH_TOKEN_EXPIRE_DAYS: 30
+      SERVICE_NAME: auth
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./services/auth:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+
+  ticketing:
+    build: ./services/ticketing
+    ports:
+      - "8002:8002"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://opentransit:opentransit_dev@postgres/opentransit_ticketing
+      REDIS_URL: redis://redis:6379/1
+      AUTH_SERVICE_URL: http://auth:8001
+      FARE_SERVICE_URL: http://fare:8003
+      RABBITMQ_URL: amqp://opentransit:opentransit_dev@rabbitmq:5672/
+      QR_SECRET_KEY: ${QR_SECRET_KEY:-change-me-in-production}
+      SERVICE_NAME: ticketing
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      auth:
+        condition: service_started
+    volumes:
+      - ./services/ticketing:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
+
+  fare:
+    build: ./services/fare
+    ports:
+      - "8003:8003"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://opentransit:opentransit_dev@postgres/opentransit_fare
+      REDIS_URL: redis://redis:6379/2
+      AUTH_SERVICE_URL: http://auth:8001
+      AGENCY_SERVICE_URL: http://agency:8004
+      SERVICE_NAME: fare
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./services/fare:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8003 --reload
+
+  agency:
+    build: ./services/agency
+    ports:
+      - "8004:8004"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://opentransit:opentransit_dev@postgres/opentransit_agency
+      REDIS_URL: redis://redis:6379/3
+      AUTH_SERVICE_URL: http://auth:8001
+      RABBITMQ_URL: amqp://opentransit:opentransit_dev@rabbitmq:5672/
+      SERVICE_NAME: agency
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./services/agency:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8004 --reload
+
+  payment:
+    build: ./services/payment
+    ports:
+      - "8005:8005"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://opentransit:opentransit_dev@postgres/opentransit_payment
+      REDIS_URL: redis://redis:6379/4
+      AUTH_SERVICE_URL: http://auth:8001
+      TICKETING_SERVICE_URL: http://ticketing:8002
+      RABBITMQ_URL: amqp://opentransit:opentransit_dev@rabbitmq:5672/
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-sk_test_placeholder}
+      SERVICE_NAME: payment
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./services/payment:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8005 --reload
+
+volumes:
+  postgres_data:
